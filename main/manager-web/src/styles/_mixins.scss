@@ -1,0 +1,19 @@
+// 仅包含可复用的 SCSS 工具，不输出独立 CSS，避免组件重复打包全局样式。
+@mixin scrollbar-style {
+  scrollbar-width: thin;
+  scrollbar-color: #c8cceb transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: #c8cceb;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

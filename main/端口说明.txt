@@ -1,0 +1,4 @@
+8000  xiaozhi-server WebSocket
+8001  manager-web
+8002  manager-api
+8003  xiaozhi-server HTTP/OTA/视觉接口

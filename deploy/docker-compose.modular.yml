@@ -1,0 +1,93 @@
+name: voice-intelligence-platform
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-voice_platform}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在.env中设置MYSQL_ROOT_PASSWORD}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [backend]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请在.env中设置REDIS_PASSWORD}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [backend]
+
+  manager-platform:
+    build:
+      context: ..
+      dockerfile: Dockerfile-web
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_DRUID_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-voice_platform}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&connectTimeout=30000&socketTimeout=30000
+      SPRING_DATASOURCE_DRUID_USERNAME: root
+      SPRING_DATASOURCE_DRUID_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports: ["${MANAGER_PORT:-8002}:8002"]
+    volumes: ["manager-uploads:/uploadfile"]
+    networks: [frontend, backend]
+
+  voice-server:
+    build:
+      context: ..
+      dockerfile: Dockerfile-server
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      manager-platform: { condition: service_started }
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+      - "${HTTP_PORT:-8003}:8003"
+    security_opt: ["seccomp:unconfined"]
+    volumes:
+      - ./data/server:/opt/xiaozhi-esp32-server/data
+      - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt:ro
+    networks: [frontend, backend]
+
+  ollama:
+    image: ollama/ollama:0.11.3
+    profiles: [local-ai]
+    restart: unless-stopped
+    ports: ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+    volumes: ["ollama-data:/root/.ollama"]
+    # 同时加入 frontend 以便拉取模型；11434 仍只绑定宿主机回环地址。
+    networks: [frontend, backend]
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  mysql-data:
+  redis-data:
+  manager-uploads:
+  ollama-data:
